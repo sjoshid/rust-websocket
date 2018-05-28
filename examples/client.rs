@@ -6,124 +6,138 @@ use std::io::stdin;
 
 use websocket::{Message, OwnedMessage};
 use websocket::client::ClientBuilder;
+use websocket::header::{Headers, Cookie};
+use std::env;
 
 const CONNECTION: &'static str = "ws://127.0.0.1:2794";
 
 fn main() {
 
-	println!("Connecting to {}", CONNECTION);
+    println!("Connecting to {}", CONNECTION);
 
-	let client = ClientBuilder::new(CONNECTION)
-		.unwrap()
-		.add_protocol("rust-websocket")
-		.connect_insecure()
-		.unwrap();
+    let args: Vec<String> = env::args().collect();
 
-	println!("Successfully connected");
+    if args.len() < 3 {
+        panic!("Sender and receiver are required.");
+    }
 
-	let (mut receiver, mut sender) = client.split().unwrap();
+    let mut my_headers = Headers::new();
 
-	let (tx, rx) = channel();
+    let user_id = "user_id=".to_owned() + &args[1];
+    my_headers.set(Cookie(vec![user_id]));
 
-	let tx_1 = tx.clone();
+    let client = ClientBuilder::new(CONNECTION)
+        .unwrap()
+        .add_protocol("rust-websocket")
+        .custom_headers(&my_headers)
+        .connect_insecure()
+        .unwrap();
 
-	let send_loop = thread::spawn(move || {
-		loop {
-			// Send loop
-			let message = match rx.recv() {
-				Ok(m) => m,
-				Err(e) => {
-					println!("Send Loop: {:?}", e);
-					return;
-				}
-			};
-			match message {
-				OwnedMessage::Close(_) => {
-					let _ = sender.send_message(&message);
-					// If it's a close message, just send it and then return.
-					return;
-				}
-				_ => (),
-			}
-			// Send the message
-			match sender.send_message(&message) {
-				Ok(()) => (),
-				Err(e) => {
-					println!("Send Loop: {:?}", e);
-					let _ = sender.send_message(&Message::close());
-					return;
-				}
-			}
-		}
-	});
+    println!("Successfully connected");
 
-	let receive_loop = thread::spawn(move || {
-		// Receive loop
-		for message in receiver.incoming_messages() {
-			let message = match message {
-				Ok(m) => m,
-				Err(e) => {
-					println!("Receive Loop: {:?}", e);
-					let _ = tx_1.send(OwnedMessage::Close(None));
-					return;
-				}
-			};
-			match message {
-				OwnedMessage::Close(_) => {
-					// Got a close message, so send a close message and return
-					let _ = tx_1.send(OwnedMessage::Close(None));
-					return;
-				}
-				OwnedMessage::Ping(data) => {
-					match tx_1.send(OwnedMessage::Pong(data)) {
-						// Send a pong in response
-						Ok(()) => (),
-						Err(e) => {
-							println!("Receive Loop: {:?}", e);
-							return;
-						}
-					}
-				}
-				// Say what we received
-				_ => println!("Receive Loop: {:?}", message),
-			}
-		}
-	});
+    let (mut receiver, mut sender) = client.split().unwrap();
 
-	loop {
-		let mut input = String::new();
+    let (tx, rx) = channel();
 
-		stdin().read_line(&mut input).unwrap();
+    let tx_1 = tx.clone();
 
-		let trimmed = input.trim();
+    let send_loop = thread::spawn(move || {
+        loop {
+            // Send loop
+            let message = match rx.recv() {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("Send Loop: {:?}", e);
+                    return;
+                }
+            };
+            match message {
+                OwnedMessage::Close(_) => {
+                    let _ = sender.send_message(&message);
+                    // If it's a close message, just send it and then return.
+                    return;
+                }
+                _ => (),
+            }
+            // Send the message
+            match sender.send_message(&message) {
+                Ok(()) => (),
+                Err(e) => {
+                    println!("Send Loop: {:?}", e);
+                    let _ = sender.send_message(&Message::close());
+                    return;
+                }
+            }
+        }
+    });
 
-		let message = match trimmed {
-			"/close" => {
-				// Close the connection
-				let _ = tx.send(OwnedMessage::Close(None));
-				break;
-			}
-			// Send a ping
-			"/ping" => OwnedMessage::Ping(b"PING".to_vec()),
-			// Otherwise, just send text
-			_ => OwnedMessage::Text(trimmed.to_string()),
-		};
+    let receive_loop = thread::spawn(move || {
+        // Receive loop
+        for message in receiver.incoming_messages() {
+            let message = match message {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("Receive Loop: {:?}", e);
+                    let _ = tx_1.send(OwnedMessage::Close(None));
+                    return;
+                }
+            };
+            match message {
+                OwnedMessage::Close(_) => {
+                    // Got a close message, so send a close message and return
+                    let _ = tx_1.send(OwnedMessage::Close(None));
+                    return;
+                }
+                OwnedMessage::Ping(data) => {
+                    match tx_1.send(OwnedMessage::Pong(data)) {
+                        // Send a pong in response
+                        Ok(()) => (),
+                        Err(e) => {
+                            println!("Receive Loop: {:?}", e);
+                            return;
+                        }
+                    }
+                }
+                // Say what we received
+                _ => println!("Receive Loop: {:?}", message),
+            }
+        }
+    });
 
-		match tx.send(message) {
-			Ok(()) => (),
-			Err(e) => {
-				println!("Main Loop: {:?}", e);
-				break;
-			}
-		}
-	}
+    loop {
+        let mut input = String::new();
 
-	// We're exiting
+        stdin().read_line(&mut input).unwrap();
 
-	println!("Waiting for child threads to exit");
+        let trimmed = input.trim();
 
-	let _ = send_loop.join();
-	let _ = receive_loop.join();
+        let message = match trimmed {
+            "/close" => {
+                // Close the connection
+                let _ = tx.send(OwnedMessage::Close(None));
+                break;
+            }
+            // Send a ping
+            "/ping" => OwnedMessage::Ping(b"PING".to_vec()),
+            // Otherwise, just send text
+            _ => OwnedMessage::Text(trimmed.to_string()),
+        };
 
-	println!("Exited");
+        match tx.send(message) {
+            Ok(()) => (),
+            Err(e) => {
+                println!("Main Loop: {:?}", e);
+                break;
+            }
+        }
+    }
+
+    // We're exiting
+
+    println!("Waiting for child threads to exit");
+
+    let _ = send_loop.join();
+    let _ = receive_loop.join();
+
+    println!("Exited");
 }
