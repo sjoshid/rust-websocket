@@ -4,6 +4,7 @@ extern crate websocket;
 extern crate serde;
 extern crate serde_json;
 
+use websocket::ws::dataframe::DataFrame;
 use std::thread;
 use std::sync::mpsc::channel;
 use std::io::stdin;
@@ -19,11 +20,10 @@ const CONNECTION: &'static str = "ws://127.0.0.1:2794";
 pub struct MessageDetails {
     pub sender_username: String,
     pub receiver_username: String,
-    pub message: String
+    pub message: String,
 }
 
 fn main() {
-
     println!("Connecting to {}", CONNECTION);
 
     let args: Vec<String> = env::args().collect();
@@ -34,8 +34,8 @@ fn main() {
 
     let mut my_headers = Headers::new();
 
-    let user_id = "user_id=".to_owned() + &args[1];
-    my_headers.set(Cookie(vec![user_id]));
+    let user_id_cookie = "user_id=".to_owned() + &args[1];
+    my_headers.set(Cookie(vec![user_id_cookie]));
 
     let client = ClientBuilder::new(CONNECTION)
         .unwrap()
@@ -68,16 +68,21 @@ fn main() {
                     // If it's a close message, just send it and then return.
                     return;
                 }
-                _ => (),
-            }
-
-            // Send the message
-            match sender.send_message(&message) {
-                Ok(()) => (),
-                Err(e) => {
-                    println!("Send Loop: {:?}", e);
-                    let _ = sender.send_message(&Message::close());
-                    return;
+                OwnedMessage::Text(str) => {
+                    let user_id = args[1].clone();
+                    let message = generate_detailed_message(str, user_id);
+                    // Send the message
+                    match sender.send_message(&message) {
+                        Ok(()) => (),
+                        Err(e) => {
+                            println!("Send Loop: {:?}", e);
+                            let _ = sender.send_message(&Message::close());
+                            return;
+                        }
+                    }
+                },
+                _ => {
+                    panic!("Only Text messages are supported.");
                 }
             }
         }
@@ -152,4 +157,13 @@ fn main() {
     let _ = receive_loop.join();
 
     println!("Exited");
+}
+
+fn generate_detailed_message(om: String, user_id: String) -> OwnedMessage {
+    //let mfs = String::from_utf8(om.take_payload()).unwrap();
+    let detailed_message = MessageDetails { sender_username: user_id, message: om, receiver_username: String::from("Morgan") };
+
+    let serialized_detailed_message = serde_json::to_string(&detailed_message).unwrap();
+
+    OwnedMessage::Text(serialized_detailed_message)
 }
