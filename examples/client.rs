@@ -1,4 +1,8 @@
+#[macro_use]
+extern crate serde_derive;
 extern crate websocket;
+extern crate serde;
+extern crate serde_json;
 
 use std::thread;
 use std::sync::mpsc::channel;
@@ -11,14 +15,21 @@ use std::env;
 
 const CONNECTION: &'static str = "ws://127.0.0.1:2794";
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MessageDetails {
+    pub sender_username: String,
+    pub receiver_username: String,
+    pub message: String
+}
+
 fn main() {
 
     println!("Connecting to {}", CONNECTION);
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 3 {
-        panic!("Sender and receiver are required.");
+    if args.len() < 2 {
+        panic!("Sender is required.");
     }
 
     let mut my_headers = Headers::new();
@@ -59,6 +70,7 @@ fn main() {
                 }
                 _ => (),
             }
+
             // Send the message
             match sender.send_message(&message) {
                 Ok(()) => (),
