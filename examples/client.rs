@@ -28,8 +28,8 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        panic!("Sender is required.");
+    if args.len() != 3 {
+        panic!("Sender and receiver are required.");
     }
 
     let mut my_headers = Headers::new();
@@ -69,8 +69,9 @@ fn main() {
                     return;
                 }
                 OwnedMessage::Text(str) => {
-                    let user_id = args[1].clone();
-                    let message = generate_detailed_message(str, user_id);
+                    let sender_user_id = args[1].clone();
+                    let receiver_user_id = args[2].clone();
+                    let message = generate_detailed_message(str, sender_user_id, receiver_user_id);
                     // Send the message
                     match sender.send_message(&message) {
                         Ok(()) => (),
@@ -159,9 +160,9 @@ fn main() {
     println!("Exited");
 }
 
-fn generate_detailed_message(om: String, user_id: String) -> OwnedMessage {
+fn generate_detailed_message(om: String, sender: String, receiver: String) -> OwnedMessage {
     //let mfs = String::from_utf8(om.take_payload()).unwrap();
-    let detailed_message = MessageDetails { sender_username: user_id, message: om, receiver_username: String::from("Morgan") };
+    let detailed_message = MessageDetails { sender_username: sender, message: om, receiver_username: receiver };
 
     let serialized_detailed_message = serde_json::to_string(&detailed_message).unwrap();
 
